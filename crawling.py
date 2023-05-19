@@ -1,0 +1,114 @@
+import re
+from urllib.parse import urljoin, urlparse
+import logging
+import requests
+from bs4 import BeautifulSoup
+import http.client
+import argparse
+
+#Declare the default phrase
+DEFAULT_PHRASE = 'python'
+
+# Search for all elemnts on a page containing the text, 
+# and print the link containing the element and the whole element.
+def search_text(source_link, page, text):
+    for element in page.find_all(text= re.compile(text, re.IGNORECASE)):
+        print(f'Link {source_link}: --> {element}')
+        
+
+# Find all the links on a page and return them
+def get_links(parsed_source, page):
+    links = []
+    for element in page.find_all('a'):
+        link = element.get('href')
+        
+        # If element has no href attribute continue
+        if not link:
+            continue
+        
+        # Avoid internal links
+        if link.startswith('#'):
+            continue
+        
+        # Only append links with the same domain
+        if parsed_source.netloc not in link:
+            continue
+        
+        # Make sure to append local links
+        if not link.startswith('http'):
+            netloc = parsed_source.netloc
+            scheme = parsed_source.scheme
+            path = urljoin(parsed_source.path, link)
+            link = f'{scheme}://{netloc}{path}'
+            
+        links.append(link)
+    
+    return links
+
+# Search the text in the page and in every link in that page
+def process_link(source_link, text):
+    logging.info(f'Extracting links from {source_link}:')
+    
+    # parse the source link on to its 6 building components,
+    # for local hosts and domain checking
+    parsed_source = urlparse(source_link)
+    
+    # Downlaod the page
+    res = requests.get(source_link)
+    
+    # Skip broken links/Not found page/... and non html pags
+    if res.status_code != http.client.OK:
+        logging.error(f'Error retrieving {source_link}: {res}')
+        return  []
+    
+    if 'html' not in res.headers['Content-Type']:
+        logging.info(f'Link {source_link} is not an HTML page')
+        return []
+    
+    # Parse the page
+    page = BeautifulSoup(res.text, 'html.parser')
+    
+    # Search the text in that page
+    search_text(source_link, page, text)
+    
+    # Return all the links on that page
+    return get_links(parsed_source, page)
+
+
+# Define the main function which will crawl through the website
+def Main(base_url, to_search):
+    checked_links = set()
+    to_check = [base_url]
+    max_checks = 10
+    
+    # Loop until max checks = 0 or all the links are checked(no more links in to to_check list)
+    while bool(to_check and max_checks):
+        # Catch the most recent link in the to_check list and remove it from to check
+        link = to_check.pop(0)
+        
+        # Search the text on that page and return all the links in that page
+        links = process_link(link, text=to_search)
+        
+        # Add the link to checked_linsks
+        checked_links.add(link)
+        
+        # Make sure the link is checked and if not add it to to_check,
+        # and also to checked_links to make sure it is not checked more than once
+        for link in links:
+            if link not in checked_links:
+                checked_links.add(link)
+                to_check.append(link)
+        
+        # Decrement the max_checks in each while loop
+        max_checks -= 1
+    
+# Make sure the whole script can not be imported    
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('url', type= str, \
+                        help= 'Site base url')
+    parser.add_argument('-p', '--phrase', type= str, default= DEFAULT_PHRASE, \
+                        help= 'Phrase to search for.')
+    args = parser.parse_args()
+    
+    Main(args.url, args.phrase)
