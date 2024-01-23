@@ -6,6 +6,11 @@ It also accepts the keyword to be searched using the -p flag.
 Default keyword is python.
 
 usage -> py ./crawling.py http://www.example.com -p keyword
+
+you will need to install the following libraries for this script
+    - pip install selenium
+    - pip install bs4
+    - pip install chromedriver-autoinstaller
 '''
 
 
